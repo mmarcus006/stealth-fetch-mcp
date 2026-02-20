@@ -46,6 +46,24 @@ class _TestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(("x" * 200).encode("utf-8"))
             return
+        if self.path.startswith("/echo-path"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(self.path.encode("utf-8"))
+            return
+        if self.path == "/headers":
+            body = json.dumps(
+                {
+                    "referer": self.headers.get("Referer"),
+                    "user_agent": self.headers.get("User-Agent"),
+                }
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+            return
         self.send_response(404)
         self.end_headers()
 
@@ -82,6 +100,24 @@ async def test_create_session_defaults() -> None:
     async with _create_session() as session:
         assert session.impersonate == "chrome"
         assert session.allow_redirects is True
+
+
+@pytest.mark.asyncio
+async def test_create_session_with_extended_options() -> None:
+    async with _create_session(
+        session_options={
+            "allow_redirects": False,
+            "verify": False,
+            "max_redirects": 5,
+            "http_version": "v2",
+            "default_headers": False,
+        }
+    ) as session:
+        assert session.allow_redirects is False
+        assert session.verify is False
+        assert session.max_redirects == 5
+        assert session.http_version == "v2"
+        assert session.default_headers is False
 
 
 @pytest.mark.asyncio
@@ -145,3 +181,30 @@ async def test_fetch_truncates_large_content(test_server_url: str) -> None:
     async with _create_session() as session:
         result = await _fetch(session, url=f"{test_server_url}/large", max_chars=20)
     assert result.text.endswith("[truncated at 20 chars]")
+
+
+@pytest.mark.asyncio
+async def test_fetch_passes_request_options_params(test_server_url: str) -> None:
+    async with _create_session() as session:
+        result = await _fetch(
+            session,
+            url=f"{test_server_url}/echo-path",
+            request_options={"params": {"q": "hello world", "n": "1"}},
+        )
+    assert "/echo-path?q=hello+world&n=1" in result.text
+
+
+@pytest.mark.asyncio
+async def test_fetch_passes_request_options_headers(test_server_url: str) -> None:
+    async with _create_session() as session:
+        result = await _fetch(
+            session,
+            url=f"{test_server_url}/headers",
+            request_options={
+                "referer": "https://example.com/source",
+                "accept_encoding": "gzip, deflate",
+                "default_headers": False,
+            },
+        )
+    parsed = json.loads(result.text)
+    assert parsed["referer"] == "https://example.com/source"

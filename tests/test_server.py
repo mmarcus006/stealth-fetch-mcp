@@ -37,6 +37,20 @@ class _ServerHandler(BaseHTTPRequestHandler):
                 b"<html><body><nav>menu</nav><h1>Server</h1><a href='/a'>A</a></body></html>"
             )
             return
+        if self.path.startswith("/inspect"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            referer = self.headers.get("Referer", "")
+            self.wfile.write(
+                (
+                    "<html><body>"
+                    f"<p>path={self.path}</p>"
+                    f"<p>referer={referer}</p>"
+                    "</body></html>"
+                ).encode("utf-8")
+            )
+            return
         if self.path == "/json":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -78,6 +92,16 @@ def test_input_models_validate_constraints() -> None:
     StealthFetchTextInput(url="https://example.com", max_chars=100)
     StealthFetchJsonInput(url="https://example.com", method="GET")
     StealthExtractLinksInput(url="https://example.com", max_results=5)
+    StealthFetchPageInput(
+        url="https://example.com",
+        session_options={"verify": False, "default_headers": False},
+        request_options={
+            "params": {"q": "x"},
+            "referer": "https://example.com/from",
+            "quote": False,
+            "http_version": "v2",
+        },
+    )
 
     with pytest.raises(ValidationError):
         StealthFetchPageInput(url="ftp://example.com")
@@ -85,6 +109,11 @@ def test_input_models_validate_constraints() -> None:
         StealthFetchTextInput(url="https://example.com", max_chars=0)
     with pytest.raises(ValidationError):
         StealthExtractLinksInput(url="https://example.com", max_results=0)
+    with pytest.raises(ValidationError):
+        StealthFetchPageInput(
+            url="https://example.com",
+            request_options={"stream": True},
+        )
 
 
 def test_tools_are_registered_with_expected_annotations() -> None:
@@ -140,6 +169,25 @@ async def test_tool_impls_work_with_live_http_server(http_url: str) -> None:
     assert '"status": "ok"' in response_json
     parsed_links = json.loads(links)
     assert parsed_links[0]["absolute_url"].endswith("/a")
+
+
+@pytest.mark.asyncio
+async def test_tool_impl_applies_request_options(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        page = await _stealth_fetch_page_impl(
+            StealthFetchPageInput(
+                url=f"{http_url}/inspect",
+                request_options={
+                    "params": {"q": "1"},
+                    "referer": "https://example.com/from",
+                    "default_headers": False,
+                },
+            ),
+            context.session,
+        )
+
+    assert "path=/inspect?q=1" in page
+    assert "referer=https://example.com/from" in page
 
 
 def test_main_contains_stdio_run() -> None:

@@ -32,6 +32,8 @@ READONLY_TOOL_ANNOTATIONS = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=True,
 )
+HttpVersionLiteral = Literal["v1", "v2", "v2tls", "v2_prior_knowledge", "v3", "v3only"]
+CurlOptionValue = str | int | float | bool
 
 
 def _truncate(value: str, max_chars: int) -> str:
@@ -42,14 +44,254 @@ def _truncate(value: str, max_chars: int) -> str:
     return f"{value[:max_chars].rstrip()}\n[truncated at {max_chars} chars]"
 
 
-class _BaseInputModel(BaseModel):
+class _ConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+
+class _BaseInputModel(_ConfigModel):
     @field_validator("url", check_fields=False)
     @classmethod
     def _validate_http_url(cls, value: str) -> str:
         if not (value.startswith("http://") or value.startswith("https://")):
             raise ValueError("URL must start with http:// or https://")
+        return value
+
+
+class CurlOptionInput(_ConfigModel):
+    option: str | int = Field(
+        ...,
+        description="Curl option key (e.g. TIMEOUT_MS, CurlOpt.TIMEOUT_MS, or numeric id).",
+    )
+    value: CurlOptionValue = Field(..., description="Curl option value.")
+
+
+class ExtraFingerprintInput(_ConfigModel):
+    tls_min_version: int | None = Field(
+        default=None,
+        description="TLS min version (e.g. 771 for TLSv1.2, 772 for TLSv1.3).",
+    )
+    tls_grease: bool | None = Field(default=None, description="Enable TLS GREASE extension.")
+    tls_permute_extensions: bool | None = Field(
+        default=None,
+        description="Permute TLS extension order in ClientHello.",
+    )
+    tls_cert_compression: Literal["zlib", "brotli"] | None = Field(
+        default=None,
+        description="TLS certificate compression preference.",
+    )
+    tls_signature_algorithms: list[str] | None = Field(
+        default=None,
+        description="TLS signature algorithms list.",
+    )
+    tls_delegated_credential: str | None = Field(
+        default=None,
+        description="TLS delegated credential signature algorithms string.",
+    )
+    tls_record_size_limit: int | None = Field(
+        default=None,
+        description="TLS record size limit extension value.",
+    )
+    http2_stream_weight: int | None = Field(
+        default=None,
+        description="HTTP/2 stream weight fingerprint value.",
+    )
+    http2_stream_exclusive: int | None = Field(
+        default=None,
+        description="HTTP/2 stream exclusive fingerprint value.",
+    )
+    http2_no_priority: bool | None = Field(
+        default=None,
+        description="Disable HTTP/2 priority signals in fingerprint.",
+    )
+
+
+class SessionOptionsInput(_ConfigModel):
+    headers: dict[str, str] | None = Field(default=None, description="Default session headers.")
+    cookies: dict[str, str] | None = Field(default=None, description="Default session cookies.")
+    auth: tuple[str, str] | None = Field(default=None, description="HTTP basic auth tuple.")
+    proxies: dict[str, str] | None = Field(
+        default=None,
+        description="Proxy map for schemes/hosts (e.g. {'https': 'http://proxy:8080'}).",
+    )
+    proxy: str | None = Field(default=None, description="Single proxy URL for all requests.")
+    proxy_auth: tuple[str, str] | None = Field(
+        default=None,
+        description="Proxy auth tuple (username, password).",
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Absolute base URL for relative request paths.",
+    )
+    params: dict[str, Any] | list[tuple[str, Any]] | None = Field(
+        default=None,
+        description="Default query params for all requests in this session.",
+    )
+    verify: bool | str | None = Field(
+        default=None,
+        description="TLS verification (bool) or CA bundle path.",
+    )
+    timeout: float | tuple[float, float] | None = Field(
+        default=None,
+        description="Session timeout seconds or (connect, read).",
+    )
+    trust_env: bool | None = Field(
+        default=None,
+        description="Use proxy/cert settings from environment variables.",
+    )
+    allow_redirects: bool | None = Field(default=None, description="Default redirect behavior.")
+    max_redirects: int | None = Field(
+        default=None,
+        ge=-1,
+        le=1_000,
+        description="Maximum redirects (-1 for unlimited).",
+    )
+    impersonate: BrowserTypeLiteral | None = Field(
+        default=None,
+        description="Default browser fingerprint profile.",
+    )
+    ja3: str | None = Field(default=None, description="Custom JA3 TLS fingerprint string.")
+    akamai: str | None = Field(default=None, description="Custom Akamai HTTP/2 fingerprint.")
+    extra_fp: ExtraFingerprintInput | None = Field(
+        default=None,
+        description="Additional fingerprint overrides applied with impersonation/JA3/Akamai.",
+    )
+    default_headers: bool | None = Field(
+        default=None,
+        description="Enable curl_cffi browser default headers.",
+    )
+    default_encoding: str | None = Field(
+        default=None,
+        description="Default response text encoding fallback.",
+    )
+    curl_options: list[CurlOptionInput] | None = Field(
+        default=None,
+        description="Low-level libcurl option overrides.",
+    )
+    http_version: HttpVersionLiteral | None = Field(
+        default=None,
+        description="HTTP version strategy.",
+    )
+    debug: bool | None = Field(default=None, description="Enable curl debug logs.")
+    interface: str | None = Field(
+        default=None,
+        description="Bind socket to a specific interface or source IP.",
+    )
+    cert: str | tuple[str, str] | None = Field(
+        default=None,
+        description="Client cert path or (cert_path, key_path) tuple.",
+    )
+    discard_cookies: bool | None = Field(
+        default=None,
+        description="Do not persist response cookies into session jar.",
+    )
+    raise_for_status: bool | None = Field(
+        default=None,
+        description="Raise HTTP error exceptions for 4xx/5xx responses.",
+    )
+    max_clients: int | None = Field(
+        default=None,
+        gt=0,
+        le=1_000,
+        description="AsyncSession connection pool size.",
+    )
+
+
+class RequestOptionsInput(_ConfigModel):
+    params: dict[str, Any] | list[tuple[str, Any]] | None = Field(
+        default=None,
+        description="Per-request query params.",
+    )
+    data: dict[str, str] | list[tuple[str, str]] | str | None = Field(
+        default=None,
+        description="Request body for form/text payloads.",
+    )
+    json_body: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        alias="json",
+        serialization_alias="json",
+        validation_alias="json",
+        description="Request JSON body payload.",
+    )
+    headers: dict[str, str] | None = Field(default=None, description="Per-request headers.")
+    cookies: dict[str, str] | None = Field(default=None, description="Per-request cookies.")
+    auth: tuple[str, str] | None = Field(default=None, description="HTTP basic auth tuple.")
+    timeout: float | tuple[float, float] | None = Field(
+        default=None,
+        description="Request timeout seconds or (connect, read).",
+    )
+    allow_redirects: bool | None = Field(default=None, description="Per-request redirect behavior.")
+    max_redirects: int | None = Field(
+        default=None,
+        ge=-1,
+        le=1_000,
+        description="Maximum redirects (-1 for unlimited).",
+    )
+    proxies: dict[str, str] | None = Field(default=None, description="Proxy map.")
+    proxy: str | None = Field(default=None, description="Single proxy URL.")
+    proxy_auth: tuple[str, str] | None = Field(default=None, description="Proxy auth tuple.")
+    verify: bool | str | None = Field(
+        default=None,
+        description="TLS verification (bool) or CA bundle path.",
+    )
+    referer: str | None = Field(default=None, description="Referer header shortcut.")
+    accept_encoding: str | None = Field(default=None, description="Accept-Encoding header value.")
+    impersonate: BrowserTypeLiteral | None = Field(
+        default=None,
+        description="Browser fingerprint profile for this request.",
+    )
+    ja3: str | None = Field(default=None, description="Custom JA3 TLS fingerprint.")
+    akamai: str | None = Field(default=None, description="Custom Akamai HTTP/2 fingerprint.")
+    extra_fp: ExtraFingerprintInput | None = Field(
+        default=None,
+        description="Additional fingerprint overrides.",
+    )
+    default_headers: bool | None = Field(
+        default=None,
+        description="Enable/disable browser default headers.",
+    )
+    default_encoding: str | None = Field(
+        default=None,
+        description="Default response text encoding fallback.",
+    )
+    quote: str | Literal[False] | None = Field(
+        default=None,
+        description="URL quoting behavior; False keeps URL as-is.",
+    )
+    http_version: HttpVersionLiteral | None = Field(
+        default=None,
+        description="HTTP version strategy.",
+    )
+    interface: str | None = Field(
+        default=None,
+        description="Bind socket to specific interface/source IP.",
+    )
+    cert: str | tuple[str, str] | None = Field(
+        default=None,
+        description="Client cert path or (cert_path, key_path).",
+    )
+    stream: bool | None = Field(
+        default=None,
+        description="Streaming responses are not supported by this MCP tool output path.",
+    )
+    max_recv_speed: int | None = Field(
+        default=None,
+        ge=0,
+        description="Maximum receive speed in bytes/second.",
+    )
+    discard_cookies: bool | None = Field(
+        default=None,
+        description="Do not store response cookies from this request.",
+    )
+    curl_options: list[CurlOptionInput] | None = Field(
+        default=None,
+        description="Low-level libcurl option overrides.",
+    )
+
+    @field_validator("stream")
+    @classmethod
+    def _validate_stream_setting(cls, value: bool | None) -> bool | None:
+        if value:
+            raise ValueError("stream=True is not supported by this MCP server output mode.")
         return value
 
 
@@ -73,6 +315,14 @@ class StealthFetchPageInput(_BaseInputModel):
         default=True,
         description="Whether HTTP redirects should be followed.",
     )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
     max_chars: int = Field(
         default=DEFAULT_MAX_CHARS,
         description="Maximum number of characters to return.",
@@ -90,6 +340,14 @@ class StealthFetchTextInput(_BaseInputModel):
     selector: str | None = Field(
         default=None,
         description="Optional CSS selector to scope readable text extraction.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
     )
     max_chars: int = Field(
         default=DEFAULT_TEXT_MAX_CHARS,
@@ -116,6 +374,14 @@ class StealthFetchJsonInput(_BaseInputModel):
     body: str | None = Field(
         default=None,
         description="Optional JSON string body used when method is POST.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
     )
     max_chars: int = Field(
         default=DEFAULT_JSON_MAX_CHARS,
@@ -146,12 +412,58 @@ class StealthExtractLinksInput(_BaseInputModel):
         gt=0,
         le=10_000,
     )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
     max_chars: int = Field(
         default=DEFAULT_LINKS_MAX_CHARS,
         description="Maximum number of characters to return.",
         gt=0,
         le=1_000_000,
     )
+
+
+def _options_to_dict(options: _ConfigModel | None) -> dict[str, Any]:
+    if options is None:
+        return {}
+    data = options.model_dump(exclude_none=True, by_alias=True)
+    curl_options = data.pop("curl_options", None)
+    if curl_options:
+        data["curl_options"] = {
+            entry["option"]: entry["value"]
+            for entry in curl_options
+        }
+    return data
+
+
+def _merge_request_options(
+    request_options: RequestOptionsInput | None,
+    **overrides: Any,
+) -> dict[str, Any] | None:
+    merged = _options_to_dict(request_options)
+    for key, value in overrides.items():
+        if value is not None:
+            merged[key] = value
+    return merged or None
+
+
+@asynccontextmanager
+async def _session_scope(
+    shared_session: AsyncSession,
+    session_options: SessionOptionsInput | None,
+) -> AsyncIterator[AsyncSession]:
+    if session_options is None:
+        yield shared_session
+        return
+
+    options = _options_to_dict(session_options)
+    async with _create_session(session_options=options) as ephemeral_session:
+        yield ephemeral_session
 
 
 @dataclass
@@ -172,27 +484,37 @@ mcp = FastMCP("stealth_fetch_mcp", lifespan=app_lifespan)
 
 
 async def _stealth_fetch_page_impl(params: StealthFetchPageInput, session: AsyncSession) -> str:
-    result = await _fetch(
-        session=session,
-        url=params.url,
-        method="GET",
+    request_options = _merge_request_options(
+        params.request_options,
         headers=params.headers,
         impersonate=params.impersonate,
         timeout=params.timeout,
-        follow_redirects=params.follow_redirects,
-        max_chars=params.max_chars,
+        allow_redirects=params.follow_redirects,
     )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=params.max_chars,
+        )
     return result.text
 
 
 async def _stealth_fetch_text_impl(params: StealthFetchTextInput, session: AsyncSession) -> str:
-    result = await _fetch(
-        session=session,
-        url=params.url,
-        method="GET",
+    request_options = _merge_request_options(
+        params.request_options,
         impersonate=params.impersonate,
-        max_chars=max(params.max_chars * 2, DEFAULT_MAX_CHARS),
     )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=max(params.max_chars * 2, DEFAULT_MAX_CHARS),
+        )
     return _clean_html(result.text, selector=params.selector, max_chars=params.max_chars)
 
 
@@ -204,15 +526,20 @@ async def _stealth_fetch_json_impl(params: StealthFetchJsonInput, session: Async
         except json.JSONDecodeError as exc:
             raise FetchError(f"Invalid JSON body for POST request: {exc}") from exc
 
-    result = await _fetch(
-        session=session,
-        url=params.url,
-        method=params.method,
+    request_options = _merge_request_options(
+        params.request_options,
         headers=params.headers,
-        body=parsed_body,
         impersonate=params.impersonate,
-        max_chars=max(params.max_chars * 2, DEFAULT_MAX_CHARS),
     )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method=params.method,
+            body=parsed_body,
+            request_options=request_options,
+            max_chars=max(params.max_chars * 2, DEFAULT_MAX_CHARS),
+        )
 
     try:
         pretty = json.dumps(json.loads(result.text), indent=2)
@@ -226,13 +553,18 @@ async def _stealth_extract_links_impl(
     params: StealthExtractLinksInput,
     session: AsyncSession,
 ) -> str:
-    result = await _fetch(
-        session=session,
-        url=params.url,
-        method="GET",
+    request_options = _merge_request_options(
+        params.request_options,
         impersonate=params.impersonate,
-        max_chars=DEFAULT_MAX_CHARS,
     )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=DEFAULT_MAX_CHARS,
+        )
     links_json = extract_links(
         html=result.text,
         base_url=params.url,

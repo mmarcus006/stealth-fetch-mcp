@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
 
+from curl_cffi.const import CurlOpt
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests import exceptions as curl_exceptions
 from curl_cffi.requests.impersonate import BrowserTypeLiteral
@@ -27,6 +28,42 @@ class FetchError(RuntimeError):
     """Raised when a fetch request cannot produce a usable response."""
 
 
+def _to_curl_option_key(option: str | int) -> CurlOpt:
+    if isinstance(option, int):
+        return CurlOpt(option)
+    normalized = option.strip()
+    if normalized.startswith("CurlOpt."):
+        normalized = normalized.split(".", 1)[1]
+    if normalized.lstrip("-").isdigit():
+        return CurlOpt(int(normalized))
+    try:
+        return getattr(CurlOpt, normalized)
+    except AttributeError as exc:
+        raise ValueError(
+            f"Unsupported curl option key: {option}. Use CurlOpt names (e.g., TIMEOUT_MS)."
+        ) from exc
+
+
+def _normalize_curl_options(
+    options: dict[str | int, Any] | None,
+) -> dict[CurlOpt, Any] | None:
+    if options is None:
+        return None
+    normalized: dict[CurlOpt, Any] = {}
+    for key, value in options.items():
+        normalized[_to_curl_option_key(key)] = value
+    return normalized
+
+
+def _normalize_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    if not options:
+        return {}
+    normalized = {k: v for k, v in options.items() if v is not None}
+    if "curl_options" in normalized:
+        normalized["curl_options"] = _normalize_curl_options(normalized["curl_options"])
+    return normalized
+
+
 def _truncate(value: str, max_chars: int) -> str:
     if max_chars <= 0:
         return "[truncated at 0 chars]"
@@ -39,13 +76,14 @@ def _create_session(
     impersonate: BrowserTypeLiteral = DEFAULT_IMPERSONATE,
     timeout: float = DEFAULT_TIMEOUT,
     follow_redirects: bool = True,
+    session_options: dict[str, Any] | None = None,
 ) -> AsyncSession:
-    return AsyncSession(
-        impersonate=impersonate,
-        timeout=timeout,
-        allow_redirects=follow_redirects,
-        raise_for_status=False,
-    )
+    options = _normalize_options(session_options)
+    options.setdefault("impersonate", impersonate)
+    options.setdefault("timeout", timeout)
+    options.setdefault("allow_redirects", follow_redirects)
+    options.setdefault("raise_for_status", False)
+    return AsyncSession(**options)
 
 
 def _handle_error(
@@ -84,20 +122,25 @@ async def _fetch(
     impersonate: BrowserTypeLiteral | None = None,
     timeout: float | None = None,
     follow_redirects: bool | None = None,
+    request_options: dict[str, Any] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> FetchResult:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise ValueError("Only http/https URLs are supported.")
 
-    request_kwargs: dict[str, Any] = {
-        "headers": headers,
-        "impersonate": impersonate,
-        "timeout": timeout,
-        "allow_redirects": follow_redirects,
-    }
+    request_kwargs = _normalize_options(request_options)
 
-    if method == "POST" and body is not None:
+    if headers is not None:
+        request_kwargs["headers"] = headers
+    if impersonate is not None:
+        request_kwargs["impersonate"] = impersonate
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+    if follow_redirects is not None:
+        request_kwargs["allow_redirects"] = follow_redirects
+
+    if body is not None and "json" not in request_kwargs and "data" not in request_kwargs:
         if isinstance(body, (dict, list)):
             request_kwargs["json"] = body
         else:
@@ -105,6 +148,8 @@ async def _fetch(
 
     try:
         response = await session.request(method=method, url=url, **request_kwargs)
+    except (TypeError, ValueError) as exc:
+        raise FetchError(f"Invalid curl_cffi options: {exc}") from exc
     except curl_exceptions.RequestException as exc:
         raise FetchError(_handle_error(exc)) from exc
 

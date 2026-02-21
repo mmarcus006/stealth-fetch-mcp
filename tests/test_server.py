@@ -10,13 +10,26 @@ from mcp.types import ToolAnnotations
 from pydantic import ValidationError
 
 from stealth_fetch_mcp.server import (
+    BulkUrlInput,
     StealthExtractLinksInput,
+    StealthExtractMetadataInput,
+    StealthExtractTablesInput,
+    StealthFetchBulkInput,
+    StealthFetchFeedInput,
+    StealthFetchHeadersInput,
     StealthFetchJsonInput,
     StealthFetchPageInput,
+    StealthFetchRobotsInput,
     StealthFetchTextInput,
     _stealth_extract_links_impl,
+    _stealth_extract_metadata_impl,
+    _stealth_extract_tables_impl,
+    _stealth_fetch_bulk_impl,
+    _stealth_fetch_feed_impl,
+    _stealth_fetch_headers_impl,
     _stealth_fetch_json_impl,
     _stealth_fetch_page_impl,
+    _stealth_fetch_robots_impl,
     _stealth_fetch_text_impl,
     app_lifespan,
     main,
@@ -56,6 +69,55 @@ class _ServerHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"status":"ok","items":[1,2,3]}')
+            return
+        if self.path == "/meta":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(
+                b'<html><head>'
+                b'<script type="application/ld+json">{"@type":"WebPage"}</script>'
+                b'<meta property="og:title" content="Test OG" />'
+                b'<meta name="twitter:card" content="summary" />'
+                b'<meta name="description" content="Test page" />'
+                b'</head><body></body></html>'
+            )
+            return
+        if self.path == "/tables":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(
+                b"<html><body>"
+                b"<table>"
+                b"<thead><tr><th>A</th><th>B</th></tr></thead>"
+                b"<tbody><tr><td>1</td><td>2</td></tr></tbody>"
+                b"</table>"
+                b"</body></html>"
+            )
+            return
+        if self.path == "/robots.txt":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(
+                b"User-agent: *\nDisallow: /private/\n"
+                b"Sitemap: https://example.com/sitemap.xml\n"
+            )
+            return
+        if self.path == "/feed":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/rss+xml")
+            self.end_headers()
+            self.wfile.write(
+                b'<?xml version="1.0"?>'
+                b"<rss version=\"2.0\"><channel>"
+                b"<title>Test Feed</title>"
+                b"<link>http://localhost/</link>"
+                b"<item><title>Item 1</title><link>http://localhost/1</link>"
+                b"<description>Desc</description></item>"
+                b"</channel></rss>"
+            )
             return
         self.send_response(404)
         self.end_headers()
@@ -123,6 +185,12 @@ def test_tools_are_registered_with_expected_annotations() -> None:
         "stealth_fetch_text",
         "stealth_fetch_json",
         "stealth_extract_links",
+        "stealth_fetch_headers",
+        "stealth_extract_metadata",
+        "stealth_extract_tables",
+        "stealth_fetch_robots",
+        "stealth_fetch_feed",
+        "stealth_fetch_bulk",
     }
 
     for name in (
@@ -130,6 +198,12 @@ def test_tools_are_registered_with_expected_annotations() -> None:
         "stealth_fetch_text",
         "stealth_fetch_json",
         "stealth_extract_links",
+        "stealth_fetch_headers",
+        "stealth_extract_metadata",
+        "stealth_extract_tables",
+        "stealth_fetch_robots",
+        "stealth_fetch_feed",
+        "stealth_fetch_bulk",
     ):
         annotations = tools[name].annotations
         assert isinstance(annotations, ToolAnnotations)
@@ -193,3 +267,110 @@ async def test_tool_impl_applies_request_options(http_url: str) -> None:
 def test_main_contains_stdio_run() -> None:
     source = inspect.getsource(main)
     assert "mcp.run(" in source
+
+
+@pytest.mark.asyncio
+async def test_stealth_fetch_headers_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_fetch_headers_impl(
+            StealthFetchHeadersInput(url=f"{http_url}/page"),
+            context.session,
+        )
+    data = json.loads(result)
+    assert data["status_code"] == 200
+    assert data["final_url"].endswith("/page")
+    assert any(k.lower() == "content-type" for k in data["headers"])
+
+
+@pytest.mark.asyncio
+async def test_stealth_extract_metadata_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_extract_metadata_impl(
+            StealthExtractMetadataInput(url=f"{http_url}/meta"),
+            context.session,
+        )
+    data = json.loads(result)
+    assert data["json_ld"] == [{"@type": "WebPage"}]
+    assert data["opengraph"]["title"] == "Test OG"
+    assert data["twitter"]["card"] == "summary"
+    assert data["meta"]["description"] == "Test page"
+
+
+@pytest.mark.asyncio
+async def test_stealth_extract_tables_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_extract_tables_impl(
+            StealthExtractTablesInput(url=f"{http_url}/tables"),
+            context.session,
+        )
+    data = json.loads(result)
+    assert len(data) == 1
+    assert data[0]["headers"] == ["A", "B"]
+    assert data[0]["rows"] == [["1", "2"]]
+
+
+@pytest.mark.asyncio
+async def test_stealth_fetch_robots_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_fetch_robots_impl(
+            StealthFetchRobotsInput(url=f"{http_url}/page"),
+            context.session,
+        )
+    data = json.loads(result)
+    assert data["url"].endswith("/robots.txt")
+    assert "*" in data["user_agents"]
+    assert "/private/" in data["user_agents"]["*"]["disallow"]
+    assert "https://example.com/sitemap.xml" in data["sitemaps"]
+
+
+@pytest.mark.asyncio
+async def test_stealth_fetch_feed_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_fetch_feed_impl(
+            StealthFetchFeedInput(url=f"{http_url}/feed"),
+            context.session,
+        )
+    data = json.loads(result)
+    assert data["feed_title"] == "Test Feed"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["title"] == "Item 1"
+    assert data["items"][0]["summary"] == "Desc"
+
+
+@pytest.mark.asyncio
+async def test_stealth_fetch_bulk_impl(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_fetch_bulk_impl(
+            StealthFetchBulkInput(
+                urls=[
+                    BulkUrlInput(url=f"{http_url}/page"),
+                    BulkUrlInput(url=f"{http_url}/json"),
+                ],
+                max_concurrency=2,
+            ),
+            context.session,
+        )
+    data = json.loads(result)
+    assert len(data) == 2
+    assert all(r["status"] == "ok" for r in data)
+    urls = {r["url"] for r in data}
+    assert f"{http_url}/page" in urls
+    assert f"{http_url}/json" in urls
+
+
+@pytest.mark.asyncio
+async def test_stealth_fetch_bulk_isolates_errors(http_url: str) -> None:
+    async with app_lifespan(mcp) as context:
+        result = await _stealth_fetch_bulk_impl(
+            StealthFetchBulkInput(
+                urls=[
+                    BulkUrlInput(url=f"{http_url}/page"),
+                    BulkUrlInput(url=f"{http_url}/nonexistent"),
+                ],
+            ),
+            context.session,
+        )
+    data = json.loads(result)
+    statuses = {r["url"].rsplit("/", 1)[-1]: r["status"] for r in data}
+    assert statuses["page"] == "ok"
+    assert statuses["nonexistent"] == "error"

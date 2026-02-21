@@ -18,6 +18,12 @@ more resilient fetch tool when default Python HTTP signatures are blocked.
 - `stealth_fetch_text`: fetch and return cleaned readability-style text.
 - `stealth_fetch_json`: fetch JSON APIs (GET/POST) and pretty-print JSON.
 - `stealth_extract_links`: extract links with CSS selector and regex filtering.
+- `stealth_fetch_headers`: return HTTP status, final URL, and response headers as JSON.
+- `stealth_extract_metadata`: extract JSON-LD, Open Graph, Twitter Card, and meta tags as JSON.
+- `stealth_extract_tables`: extract all HTML tables as JSON with automatic header detection.
+- `stealth_fetch_robots`: fetch and parse a site's robots.txt into structured JSON.
+- `stealth_fetch_feed`: fetch and parse RSS 2.0 or Atom feeds into structured JSON.
+- `stealth_fetch_bulk`: fetch multiple URLs concurrently with per-URL error isolation.
 
 All tools are:
 
@@ -114,6 +120,65 @@ uv run python -m stealth_fetch_mcp.server
 - `request_options` (optional object; per-request `curl_cffi` config)
 - `max_chars` (default: `100000`)
 - returns: JSON list of `{text, href, absolute_url}`
+
+### `stealth_fetch_headers`
+
+- `url` (required)
+- `impersonate` (default: `"chrome"`)
+- `headers` (optional object)
+- `timeout` (default: `30`)
+- `follow_redirects` (default: `true`)
+- `session_options` (optional object)
+- `request_options` (optional object)
+- returns: JSON object `{"status_code": int, "final_url": str, "headers": object}`
+
+### `stealth_extract_metadata`
+
+- `url` (required)
+- `impersonate` (default: `"chrome"`)
+- `session_options` (optional object)
+- `request_options` (optional object)
+- `max_chars` (default: `100000`)
+- returns: JSON object `{"json_ld": [...], "opengraph": {...}, "twitter": {...}, "meta": {...}}`
+
+### `stealth_extract_tables`
+
+- `url` (required)
+- `impersonate` (default: `"chrome"`)
+- `selector` (optional CSS selector to scope the table search)
+- `session_options` (optional object)
+- `request_options` (optional object)
+- `max_chars` (default: `100000`)
+- returns: JSON list of `{"headers": [...], "rows": [[...], ...]}`
+
+### `stealth_fetch_robots`
+
+- `url` (required — any URL on the target site; scheme+host used to derive `/robots.txt`)
+- `impersonate` (default: `"chrome"`)
+- `session_options` (optional object)
+- `request_options` (optional object)
+- returns: JSON object `{"url": str, "user_agents": {...}, "sitemaps": [...]}`
+
+### `stealth_fetch_feed`
+
+- `url` (required RSS 2.0 or Atom feed URL)
+- `impersonate` (default: `"chrome"`)
+- `max_items` (default: `50`, max: `500`)
+- `session_options` (optional object)
+- `request_options` (optional object)
+- `max_chars` (default: `100000`)
+- returns: JSON object `{"feed_title": str, "feed_link": str, "items": [{"title", "link", "published", "summary"}]}`
+
+### `stealth_fetch_bulk`
+
+- `urls` (required list of `{"url": str}` objects, 1–50 entries)
+- `impersonate` (default: `"chrome"`)
+- `max_concurrency` (default: `5`, max: `20`)
+- `delay` (default: `0.0` seconds; sleep before each request after acquiring a semaphore slot)
+- `timeout` (default: `30`)
+- `session_options` (optional object)
+- `max_chars_per_url` (default: `10000`)
+- returns: JSON list of `{"url", "status": "ok"|"error", "status_code"?, "final_url"?, "text"?, "error"?}`
 
 ## `curl_cffi` Option Coverage
 

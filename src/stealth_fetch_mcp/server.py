@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.impersonate import BrowserTypeLiteral
@@ -21,7 +23,14 @@ from stealth_fetch_mcp.client import (
     _create_session,
     _fetch,
 )
-from stealth_fetch_mcp.parser import _clean_html, extract_links
+from stealth_fetch_mcp.parser import (
+    _clean_html,
+    extract_links,
+    extract_metadata,
+    extract_tables,
+    parse_feed,
+    parse_robots_txt,
+)
 
 DEFAULT_TEXT_MAX_CHARS = 50_000
 DEFAULT_JSON_MAX_CHARS = 100_000
@@ -428,6 +437,180 @@ class StealthExtractLinksInput(_BaseInputModel):
     )
 
 
+class StealthFetchHeadersInput(_BaseInputModel):
+    url: str = Field(..., description="Target URL to inspect.")
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target for curl_cffi impersonation.",
+    )
+    headers: dict[str, str] | None = Field(
+        default=None,
+        description="Optional request headers to include.",
+    )
+    timeout: float = Field(
+        default=DEFAULT_TIMEOUT,
+        description="Request timeout in seconds.",
+        gt=0,
+        le=300,
+    )
+    follow_redirects: bool = Field(
+        default=True,
+        description="Whether HTTP redirects should be followed.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
+
+
+class StealthExtractMetadataInput(_BaseInputModel):
+    url: str = Field(..., description="Target URL to fetch.")
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target for curl_cffi impersonation.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
+    max_chars: int = Field(
+        default=DEFAULT_JSON_MAX_CHARS,
+        description="Maximum number of characters to return.",
+        gt=0,
+        le=1_000_000,
+    )
+
+
+class StealthExtractTablesInput(_BaseInputModel):
+    url: str = Field(..., description="Target URL to fetch.")
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target for curl_cffi impersonation.",
+    )
+    selector: str | None = Field(
+        default=None,
+        description="Optional CSS selector to scope table search within a sub-element.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
+    max_chars: int = Field(
+        default=DEFAULT_JSON_MAX_CHARS,
+        description="Maximum number of characters to return.",
+        gt=0,
+        le=1_000_000,
+    )
+
+
+class StealthFetchRobotsInput(_BaseInputModel):
+    url: str = Field(
+        ...,
+        description=(
+            "Any URL on the target site. The scheme and host are used to derive "
+            "the robots.txt URL (e.g. https://example.com/page → "
+            "https://example.com/robots.txt)."
+        ),
+    )
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target for curl_cffi impersonation.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
+
+
+class StealthFetchFeedInput(_BaseInputModel):
+    url: str = Field(..., description="Target RSS 2.0 or Atom feed URL.")
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target for curl_cffi impersonation.",
+    )
+    max_items: int = Field(
+        default=50,
+        description="Maximum number of feed items to return.",
+        gt=0,
+        le=500,
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    request_options: RequestOptionsInput | None = Field(
+        default=None,
+        description="Optional per-request curl_cffi options.",
+    )
+    max_chars: int = Field(
+        default=DEFAULT_JSON_MAX_CHARS,
+        description="Maximum number of characters to return.",
+        gt=0,
+        le=1_000_000,
+    )
+
+
+class BulkUrlInput(_BaseInputModel):
+    url: str = Field(..., description="Target URL to fetch.")
+
+
+class StealthFetchBulkInput(_ConfigModel):
+    urls: list[BulkUrlInput] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="List of URLs to fetch (1–50 entries).",
+    )
+    impersonate: BrowserTypeLiteral = Field(
+        default=DEFAULT_IMPERSONATE,
+        description="Browser fingerprint target applied to all requests.",
+    )
+    max_concurrency: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum number of concurrent requests.",
+    )
+    delay: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=60.0,
+        description="Seconds to sleep after acquiring a semaphore slot before each request.",
+    )
+    timeout: float = Field(
+        default=DEFAULT_TIMEOUT,
+        gt=0,
+        le=300,
+        description="Per-request timeout in seconds.",
+    )
+    session_options: SessionOptionsInput | None = Field(
+        default=None,
+        description="Optional AsyncSession-level curl_cffi options.",
+    )
+    max_chars_per_url: int = Field(
+        default=10_000,
+        gt=0,
+        le=100_000,
+        description="Maximum characters of body text to return per URL.",
+    )
+
+
 def _options_to_dict(options: _ConfigModel | None) -> dict[str, Any]:
     if options is None:
         return {}
@@ -575,6 +758,153 @@ async def _stealth_extract_links_impl(
     return _truncate(links_json, params.max_chars)
 
 
+async def _stealth_fetch_headers_impl(
+    params: StealthFetchHeadersInput,
+    session: AsyncSession,
+) -> str:
+    request_options = _merge_request_options(
+        params.request_options,
+        headers=params.headers,
+        impersonate=params.impersonate,
+        timeout=params.timeout,
+        allow_redirects=params.follow_redirects,
+    )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=1,
+        )
+    return json.dumps(
+        {"status_code": result.status_code, "final_url": result.final_url, "headers": result.headers},
+        indent=2,
+    )
+
+
+async def _stealth_extract_metadata_impl(
+    params: StealthExtractMetadataInput,
+    session: AsyncSession,
+) -> str:
+    request_options = _merge_request_options(
+        params.request_options,
+        impersonate=params.impersonate,
+    )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=DEFAULT_MAX_CHARS,
+        )
+    return _truncate(extract_metadata(result.text), params.max_chars)
+
+
+async def _stealth_extract_tables_impl(
+    params: StealthExtractTablesInput,
+    session: AsyncSession,
+) -> str:
+    request_options = _merge_request_options(
+        params.request_options,
+        impersonate=params.impersonate,
+    )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=DEFAULT_MAX_CHARS,
+        )
+    return _truncate(extract_tables(result.text, selector=params.selector), params.max_chars)
+
+
+async def _stealth_fetch_robots_impl(
+    params: StealthFetchRobotsInput,
+    session: AsyncSession,
+) -> str:
+    parsed = urlparse(params.url)
+    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+    request_options = _merge_request_options(
+        params.request_options,
+        impersonate=params.impersonate,
+    )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=robots_url,
+            method="GET",
+            request_options=request_options,
+            max_chars=500_000,
+        )
+    robots_data: dict[str, Any] = parse_robots_txt(result.text)
+    robots_data["url"] = robots_url
+    return json.dumps(robots_data, indent=2)
+
+
+async def _stealth_fetch_feed_impl(
+    params: StealthFetchFeedInput,
+    session: AsyncSession,
+) -> str:
+    request_options = _merge_request_options(
+        params.request_options,
+        impersonate=params.impersonate,
+    )
+    async with _session_scope(session, params.session_options) as active_session:
+        result = await _fetch(
+            session=active_session,
+            url=params.url,
+            method="GET",
+            request_options=request_options,
+            max_chars=DEFAULT_MAX_CHARS,
+        )
+    try:
+        parsed = parse_feed(result.text, max_items=params.max_items)
+    except ValueError as exc:
+        raise FetchError(str(exc)) from exc
+    return _truncate(parsed, params.max_chars)
+
+
+async def _stealth_fetch_bulk_impl(
+    params: StealthFetchBulkInput,
+    session: AsyncSession,
+) -> str:
+    semaphore = asyncio.Semaphore(params.max_concurrency)
+
+    async def _fetch_one(url: str) -> dict[str, Any]:
+        async with semaphore:
+            if params.delay > 0:
+                await asyncio.sleep(params.delay)
+            request_options = _merge_request_options(
+                None,
+                impersonate=params.impersonate,
+                timeout=params.timeout,
+            )
+            try:
+                result = await _fetch(
+                    session=active_session,
+                    url=url,
+                    method="GET",
+                    request_options=request_options,
+                    max_chars=params.max_chars_per_url,
+                )
+                return {
+                    "url": url,
+                    "status": "ok",
+                    "status_code": result.status_code,
+                    "final_url": result.final_url,
+                    "text": result.text,
+                }
+            except FetchError as exc:
+                return {"url": url, "status": "error", "error": str(exc)}
+
+    async with _session_scope(session, params.session_options) as active_session:
+        results = await asyncio.gather(*[_fetch_one(entry.url) for entry in params.urls])
+    return json.dumps(list(results), indent=2)
+
+
 @mcp.tool(name="stealth_fetch_page", annotations=READONLY_TOOL_ANNOTATIONS)
 async def stealth_fetch_page(
     params: StealthFetchPageInput,
@@ -626,6 +956,88 @@ async def stealth_extract_links(
     """
 
     return await _stealth_extract_links_impl(params, ctx.request_context.lifespan_context.session)
+
+
+@mcp.tool(name="stealth_fetch_headers", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_fetch_headers(
+    params: StealthFetchHeadersInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch a URL and return HTTP status code, final URL, and response headers as JSON.
+
+    Useful for content-type detection, redirect inspection, cache analysis, and auth header
+    verification without fetching the full response body.
+    """
+    return await _stealth_fetch_headers_impl(params, ctx.request_context.lifespan_context.session)
+
+
+@mcp.tool(name="stealth_extract_metadata", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_extract_metadata(
+    params: StealthExtractMetadataInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch a page and extract structured metadata as JSON.
+
+    Returns JSON-LD script blocks, Open Graph (og:*) tags, Twitter Card (twitter:*) tags,
+    and standard <meta> tags in a single structured object.
+    """
+    return await _stealth_extract_metadata_impl(
+        params, ctx.request_context.lifespan_context.session
+    )
+
+
+@mcp.tool(name="stealth_extract_tables", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_extract_tables(
+    params: StealthExtractTablesInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch a page and extract all HTML tables as a JSON list of {headers, rows} objects.
+
+    Automatically detects header rows from <thead> or leading <th> elements. Useful for
+    financial data, comparison tables, sports results, and pricing grids.
+    """
+    return await _stealth_extract_tables_impl(
+        params, ctx.request_context.lifespan_context.session
+    )
+
+
+@mcp.tool(name="stealth_fetch_robots", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_fetch_robots(
+    params: StealthFetchRobotsInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch and parse a site's robots.txt, returning structured Allow/Disallow/Sitemap data.
+
+    Derives the robots.txt URL from the scheme and host of the provided URL. Useful for
+    planning respectful crawls and discovering sitemap locations.
+    """
+    return await _stealth_fetch_robots_impl(params, ctx.request_context.lifespan_context.session)
+
+
+@mcp.tool(name="stealth_fetch_feed", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_fetch_feed(
+    params: StealthFetchFeedInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch and parse an RSS 2.0 or Atom feed, returning items as structured JSON.
+
+    Returns feed title, feed link, and a list of items with title, link, published date,
+    and summary. Useful for tracking changelogs, blog updates, and news feeds.
+    """
+    return await _stealth_fetch_feed_impl(params, ctx.request_context.lifespan_context.session)
+
+
+@mcp.tool(name="stealth_fetch_bulk", annotations=READONLY_TOOL_ANNOTATIONS)
+async def stealth_fetch_bulk(
+    params: StealthFetchBulkInput,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Fetch multiple URLs concurrently and return per-URL results as a JSON list.
+
+    Each result includes status ("ok" or "error"), status_code, final_url, and body text.
+    Errors for individual URLs are isolated — one failure does not stop the others.
+    """
+    return await _stealth_fetch_bulk_impl(params, ctx.request_context.lifespan_context.session)
 
 
 def main() -> None:

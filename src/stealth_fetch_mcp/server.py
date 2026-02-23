@@ -6,8 +6,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
-from urllib.parse import urlparse
-
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.impersonate import BrowserTypeLiteral
 from mcp.server.fastmcp import Context, FastMCP
@@ -29,7 +27,6 @@ from stealth_fetch_mcp.parser import (
     extract_metadata,
     extract_tables,
     parse_feed,
-    parse_robots_txt,
 )
 
 DEFAULT_TEXT_MAX_CHARS = 50_000
@@ -43,6 +40,34 @@ READONLY_TOOL_ANNOTATIONS = ToolAnnotations(
 )
 HttpVersionLiteral = Literal["v1", "v2", "v2tls", "v2_prior_knowledge", "v3", "v3only"]
 CurlOptionValue = str | int | float | bool
+
+SERVER_INSTRUCTIONS = """\
+stealth_fetch_mcp provides browser-impersonated HTTP fetching via curl_cffi \
+TLS/JA3/HTTP2 fingerprinting. Every request appears as a real browser — \
+no headless browser binary or external API required.
+
+IMPORTANT — Compliance:
+- All requests automatically respect robots.txt rules for the target site. \
+If a URL is disallowed by the site's robots.txt, the request will fail \
+with a clear error. You do not need to check robots.txt manually — \
+compliance is enforced at the transport layer.
+- Respect site terms of service and apply reasonable rate limits. \
+Use the `delay` parameter in stealth_fetch_bulk for multi-URL workloads.
+
+Tool selection guide:
+- Raw HTML needed → stealth_fetch_page
+- Clean readable text → stealth_fetch_text
+- JSON API response → stealth_fetch_json
+- Link discovery → stealth_extract_links
+- HTTP headers / status / redirects only → stealth_fetch_headers
+- Structured metadata (JSON-LD, OpenGraph, Twitter Card) → stealth_extract_metadata
+- Tabular data → stealth_extract_tables
+- RSS / Atom feed → stealth_fetch_feed
+- Multiple URLs at once → stealth_fetch_bulk (do NOT loop single-URL tools)
+
+One call is usually enough. Each tool returns complete, structured output — \
+avoid follow-up calls to verify or re-fetch the same URL.\
+"""
 
 
 def _truncate(value: str, max_chars: int) -> str:
@@ -515,29 +540,6 @@ class StealthExtractTablesInput(_BaseInputModel):
     )
 
 
-class StealthFetchRobotsInput(_BaseInputModel):
-    url: str = Field(
-        ...,
-        description=(
-            "Any URL on the target site. The scheme and host are used to derive "
-            "the robots.txt URL (e.g. https://example.com/page → "
-            "https://example.com/robots.txt)."
-        ),
-    )
-    impersonate: BrowserTypeLiteral = Field(
-        default=DEFAULT_IMPERSONATE,
-        description="Browser fingerprint target for curl_cffi impersonation.",
-    )
-    session_options: SessionOptionsInput | None = Field(
-        default=None,
-        description="Optional AsyncSession-level curl_cffi options.",
-    )
-    request_options: RequestOptionsInput | None = Field(
-        default=None,
-        description="Optional per-request curl_cffi options.",
-    )
-
-
 class StealthFetchFeedInput(_BaseInputModel):
     url: str = Field(..., description="Target RSS 2.0 or Atom feed URL.")
     impersonate: BrowserTypeLiteral = Field(
@@ -656,14 +658,15 @@ class AppContext:
 
 @asynccontextmanager
 async def app_lifespan(_: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
-    session = _create_session()
-    try:
+    async with _create_session() as session:
         yield AppContext(session=session)
-    finally:
-        await session.close()
 
 
-mcp = FastMCP("stealth_fetch_mcp", lifespan=app_lifespan)
+mcp = FastMCP(
+    "stealth_fetch_mcp",
+    instructions=SERVER_INSTRUCTIONS,
+    lifespan=app_lifespan,
+)
 
 
 async def _stealth_fetch_page_impl(params: StealthFetchPageInput, session: AsyncSession) -> str:
@@ -821,29 +824,6 @@ async def _stealth_extract_tables_impl(
     return _truncate(extract_tables(result.text, selector=params.selector), params.max_chars)
 
 
-async def _stealth_fetch_robots_impl(
-    params: StealthFetchRobotsInput,
-    session: AsyncSession,
-) -> str:
-    parsed = urlparse(params.url)
-    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-    request_options = _merge_request_options(
-        params.request_options,
-        impersonate=params.impersonate,
-    )
-    async with _session_scope(session, params.session_options) as active_session:
-        result = await _fetch(
-            session=active_session,
-            url=robots_url,
-            method="GET",
-            request_options=request_options,
-            max_chars=500_000,
-        )
-    robots_data: dict[str, Any] = parse_robots_txt(result.text)
-    robots_data["url"] = robots_url
-    return json.dumps(robots_data, indent=2)
-
-
 async def _stealth_fetch_feed_impl(
     params: StealthFetchFeedInput,
     session: AsyncSession,
@@ -910,10 +890,11 @@ async def stealth_fetch_page(
     params: StealthFetchPageInput,
     ctx: Context[ServerSession, AppContext],
 ) -> str:
-    """Fetch a web page with browser TLS impersonation and return raw HTML.
+    """Fetch a page and return raw HTML with browser impersonation.
 
-    Uses curl_cffi with browser-grade TLS/HTTP fingerprinting to improve compatibility with
-    sites that reject default Python HTTP client signatures.
+    Use when you need full HTML for custom parsing. For clean readable text,
+    use stealth_fetch_text instead. For structured data, use stealth_extract_metadata
+    or stealth_extract_tables.
     """
 
     return await _stealth_fetch_page_impl(params, ctx.request_context.lifespan_context.session)
@@ -926,7 +907,9 @@ async def stealth_fetch_text(
 ) -> str:
     """Fetch a page and return cleaned readability-style text content.
 
-    Removes scripts/navigation chrome and preserves key structure such as headings, lists, and links.
+    Removes scripts/navigation chrome and preserves headings, lists, and links.
+    Do NOT use for structured data — use stealth_fetch_json, stealth_extract_metadata,
+    or stealth_extract_tables instead.
     """
 
     return await _stealth_fetch_text_impl(params, ctx.request_context.lifespan_context.session)
@@ -939,7 +922,8 @@ async def stealth_fetch_json(
 ) -> str:
     """Fetch a JSON API endpoint with browser impersonation and return pretty JSON text.
 
-    Supports GET and POST requests, with optional JSON body parsing for POST operations.
+    Supports GET and POST with optional JSON body. Do NOT use for HTML pages —
+    use stealth_fetch_page or stealth_fetch_text instead.
     """
 
     return await _stealth_fetch_json_impl(params, ctx.request_context.lifespan_context.session)
@@ -952,7 +936,8 @@ async def stealth_extract_links(
 ) -> str:
     """Fetch a page and extract matching links as JSON.
 
-    Returns link text, raw href, and resolved absolute URL values.
+    Returns link text, raw href, and resolved absolute URL values. Supports CSS
+    selector and regex filtering. For full page content, use stealth_fetch_text instead.
     """
 
     return await _stealth_extract_links_impl(params, ctx.request_context.lifespan_context.session)
@@ -965,8 +950,9 @@ async def stealth_fetch_headers(
 ) -> str:
     """Fetch a URL and return HTTP status code, final URL, and response headers as JSON.
 
-    Useful for content-type detection, redirect inspection, cache analysis, and auth header
-    verification without fetching the full response body.
+    Useful for content-type detection, redirect inspection, cache analysis, and auth
+    header verification without fetching the full response body. Do NOT use to get
+    page content — use stealth_fetch_page or stealth_fetch_text instead.
     """
     return await _stealth_fetch_headers_impl(params, ctx.request_context.lifespan_context.session)
 
@@ -978,8 +964,9 @@ async def stealth_extract_metadata(
 ) -> str:
     """Fetch a page and extract structured metadata as JSON.
 
-    Returns JSON-LD script blocks, Open Graph (og:*) tags, Twitter Card (twitter:*) tags,
-    and standard <meta> tags in a single structured object.
+    Returns JSON-LD script blocks, Open Graph (og:*) tags, Twitter Card (twitter:*)
+    tags, and standard <meta> tags in a single structured object. Returns all metadata
+    in one call — no follow-up requests needed.
     """
     return await _stealth_extract_metadata_impl(
         params, ctx.request_context.lifespan_context.session
@@ -993,27 +980,13 @@ async def stealth_extract_tables(
 ) -> str:
     """Fetch a page and extract all HTML tables as a JSON list of {headers, rows} objects.
 
-    Automatically detects header rows from <thead> or leading <th> elements. Handles large
-    pages with many tables without needing a simplified URL. Useful for financial data,
-    comparison tables, sports results, and pricing grids.
+    Automatically detects header rows from <thead> or leading <th> elements. Handles
+    large pages with many tables without needing a simplified URL. Do NOT re-fetch with
+    a different URL if results look incomplete — the extraction is deterministic.
     """
     return await _stealth_extract_tables_impl(
         params, ctx.request_context.lifespan_context.session
     )
-
-
-@mcp.tool(name="stealth_fetch_robots", annotations=READONLY_TOOL_ANNOTATIONS)
-async def stealth_fetch_robots(
-    params: StealthFetchRobotsInput,
-    ctx: Context[ServerSession, AppContext],
-) -> str:
-    """Fetch and parse a site's robots.txt, returning structured Allow/Disallow/Sitemap data.
-
-    Derives the robots.txt URL from the scheme and host of the provided URL. Returns fully
-    parsed, structured JSON — no need to fetch robots.txt manually afterwards. Useful for
-    planning respectful crawls and discovering sitemap locations.
-    """
-    return await _stealth_fetch_robots_impl(params, ctx.request_context.lifespan_context.session)
 
 
 @mcp.tool(name="stealth_fetch_feed", annotations=READONLY_TOOL_ANNOTATIONS)
@@ -1023,9 +996,9 @@ async def stealth_fetch_feed(
 ) -> str:
     """Fetch and parse an RSS 2.0 or Atom feed, returning items as structured JSON.
 
-    Follows redirects automatically — pass any feed URL and redirect resolution is handled.
-    Returns feed title, feed link, and a list of items with title, link, published date,
-    and summary. Useful for tracking changelogs, blog updates, and news feeds.
+    Follows redirects automatically — pass any feed URL directly. Returns feed title,
+    feed link, and items with title, link, published date, and summary. Do NOT pre-check
+    headers or content type — this tool handles format detection internally.
     """
     return await _stealth_fetch_feed_impl(params, ctx.request_context.lifespan_context.session)
 
@@ -1039,11 +1012,18 @@ async def stealth_fetch_bulk(
 
     Each result includes status ("ok" or "error"), status_code, final_url, and body text.
     Errors for individual URLs are isolated — one failure does not stop the others.
+    Always prefer this over looping single-URL tools when fetching 2+ URLs.
     """
     return await _stealth_fetch_bulk_impl(params, ctx.request_context.lifespan_context.session)
 
 
 def main() -> None:
+    import signal
+
+    def _handle_sigterm(signum: int, frame: object) -> None:
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
     mcp.run()
 
 

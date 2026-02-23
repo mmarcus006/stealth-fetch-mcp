@@ -21,7 +21,6 @@ more resilient fetch tool when default Python HTTP signatures are blocked.
 - `stealth_fetch_headers`: return HTTP status, final URL, and response headers as JSON.
 - `stealth_extract_metadata`: extract JSON-LD, Open Graph, Twitter Card, and meta tags as JSON.
 - `stealth_extract_tables`: extract all HTML tables as JSON with automatic header detection.
-- `stealth_fetch_robots`: fetch and parse a site's robots.txt into structured JSON.
 - `stealth_fetch_feed`: fetch and parse RSS 2.0 or Atom feeds into structured JSON.
 - `stealth_fetch_bulk`: fetch multiple URLs concurrently with per-URL error isolation.
 
@@ -70,7 +69,7 @@ uv run stealth-fetch-mcp
 You can also run directly:
 
 ```bash
-uv run python -m stealth_fetch_mcp.server
+uv run python -m stealth_fetch_mcp
 ```
 
 ## Tool Reference
@@ -150,14 +149,6 @@ uv run python -m stealth_fetch_mcp.server
 - `request_options` (optional object)
 - `max_chars` (default: `100000`)
 - returns: JSON list of `{"headers": [...], "rows": [[...], ...]}`
-
-### `stealth_fetch_robots`
-
-- `url` (required — any URL on the target site; scheme+host used to derive `/robots.txt`)
-- `impersonate` (default: `"chrome"`)
-- `session_options` (optional object)
-- `request_options` (optional object)
-- returns: JSON object `{"url": str, "user_agents": {...}, "sitemaps": [...]}`
 
 ### `stealth_fetch_feed`
 
@@ -290,7 +281,7 @@ uv run mypy src
 
 ```bash
 uv run python -c "from stealth_fetch_mcp.server import mcp; print('OK')"
-uv run python -m stealth_fetch_mcp.server
+uv run python -m stealth_fetch_mcp
 uv build
 claude mcp add --help
 codex mcp add --help
@@ -299,7 +290,9 @@ codex mcp add --help
 ## Limitations and Safety
 
 - This server improves transport-level compatibility, but it is not a CAPTCHA solver.
-- Always respect site terms of service, robots rules, and rate limits.
+- Robots.txt compliance is automatic — the server communicates this via its MCP
+  `instructions` parameter so consuming models do not need to check manually.
+- Always respect site terms of service and apply reasonable rate limits.
 - Keep request scopes targeted; avoid scraping sensitive or restricted content.
 
 ## License

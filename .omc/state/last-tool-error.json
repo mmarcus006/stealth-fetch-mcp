@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"claude mcp list -g 2>&1\",\"description\":\"List global MCP servers\"}",
+  "error": "Exit code 1\nerror: unknown option '-g'\n\nerror: unknown option '-g'",
+  "timestamp": "2026-02-23T04:06:14.691Z",
+  "retry_count": 1
+}

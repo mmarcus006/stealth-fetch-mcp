@@ -1,0 +1,225 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1771813298025,
+  "projectRoot": "C:\\projects\\stealth-fetch-mcp",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1771813297968,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 3,
+      "lastAccessed": 1771813297969,
+      "keyFiles": [
+        "test_client.py",
+        "test_parser.py",
+        "test_server.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "",
+      "accessCount": 9,
+      "lastAccessed": 1771814184492,
+      "type": "directory"
+    },
+    {
+      "path": "src\\stealth_fetch_mcp\\server.py",
+      "accessCount": 9,
+      "lastAccessed": 1771818776342,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 9,
+      "lastAccessed": 1771819050564,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 6,
+      "lastAccessed": 1771814190848,
+      "type": "directory"
+    },
+    {
+      "path": "pyproject.toml",
+      "accessCount": 5,
+      "lastAccessed": 1771814178824,
+      "type": "file"
+    },
+    {
+      "path": "AGENTS.md",
+      "accessCount": 5,
+      "lastAccessed": 1771819035767,
+      "type": "file"
+    },
+    {
+      "path": "src\\stealth_fetch_mcp\\client.py",
+      "accessCount": 4,
+      "lastAccessed": 1771814169399,
+      "type": "file"
+    },
+    {
+      "path": "src\\stealth_fetch_mcp\\__init__.py",
+      "accessCount": 3,
+      "lastAccessed": 1771814169873,
+      "type": "file"
+    },
+    {
+      "path": "tests\\test_server.py",
+      "accessCount": 3,
+      "lastAccessed": 1771814190102,
+      "type": "file"
+    },
+    {
+      "path": "tests\\test_client.py",
+      "accessCount": 2,
+      "lastAccessed": 1771814173622,
+      "type": "file"
+    },
+    {
+      "path": "src\\stealth_fetch_mcp\\parser.py",
+      "accessCount": 1,
+      "lastAccessed": 1771813327895,
+      "type": "file"
+    },
+    {
+      "path": "tests\\test_parser.py",
+      "accessCount": 1,
+      "lastAccessed": 1771813328983,
+      "type": "file"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813329248,
+      "type": "file"
+    },
+    {
+      "path": "specs\\project_overview.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813467984,
+      "type": "file"
+    },
+    {
+      "path": "specs\\tech_stack.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813478254,
+      "type": "file"
+    },
+    {
+      "path": "specs\\project_structure.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813485522,
+      "type": "file"
+    },
+    {
+      "path": "specs\\module_overview.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813504981,
+      "type": "file"
+    },
+    {
+      "path": "specs\\setup_guide.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813516952,
+      "type": "file"
+    },
+    {
+      "path": "specs\\api_contracts.md",
+      "accessCount": 1,
+      "lastAccessed": 1771813549129,
+      "type": "file"
+    },
+    {
+      "path": ".venv\\lib\\python3.12\\site-packages\\mcp\\server\\fastmcp",
+      "accessCount": 1,
+      "lastAccessed": 1771813627866,
+      "type": "directory"
+    },
+    {
+      "path": ".venv\\lib\\python3.12\\site-packages\\mcp\\server\\fastmcp\\server.py",
+      "accessCount": 1,
+      "lastAccessed": 1771813628960,
+      "type": "directory"
+    },
+    {
+      "path": ".venv\\lib\\python3.12\\site-packages\\curl_cffi\\requests",
+      "accessCount": 1,
+      "lastAccessed": 1771813635421,
+      "type": "directory"
+    },
+    {
+      "path": ".venv\\lib\\python3.12\\site-packages\\curl_cffi\\requests\\session.py",
+      "accessCount": 1,
+      "lastAccessed": 1771813636827,
+      "type": "directory"
+    },
+    {
+      "path": "tests",
+      "accessCount": 1,
+      "lastAccessed": 1771814183629,
+      "type": "directory"
+    },
+    {
+      "path": "src\\stealth_fetch_mcp\\__main__.py",
+      "accessCount": 1,
+      "lastAccessed": 1771818777261,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

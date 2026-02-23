@@ -1,0 +1,9 @@
+{"t":0,"agent":"ac88352","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"system","event":"keyword_detected","keyword":"sciomc"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:sciomc"}
+{"t":0,"agent":"ad107b0","agent_type":"scientist","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a2c7e02","agent_type":"scientist","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ad9e08c","agent_type":"scientist","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a2c7e02","agent_type":"scientist","event":"agent_stop","success":true,"duration_ms":241308}
+{"t":0,"agent":"ad9e08c","agent_type":"scientist","event":"agent_stop","success":true,"duration_ms":307800}
+{"t":0,"agent":"ad107b0","agent_type":"scientist","event":"agent_stop","success":true,"duration_ms":378015}

@@ -19,7 +19,6 @@ from stealth_fetch_mcp.server import (
     StealthFetchHeadersInput,
     StealthFetchJsonInput,
     StealthFetchPageInput,
-    StealthFetchRobotsInput,
     StealthFetchTextInput,
     _stealth_extract_links_impl,
     _stealth_extract_metadata_impl,
@@ -29,7 +28,6 @@ from stealth_fetch_mcp.server import (
     _stealth_fetch_headers_impl,
     _stealth_fetch_json_impl,
     _stealth_fetch_page_impl,
-    _stealth_fetch_robots_impl,
     _stealth_fetch_text_impl,
     app_lifespan,
     main,
@@ -94,15 +92,6 @@ class _ServerHandler(BaseHTTPRequestHandler):
                 b"<tbody><tr><td>1</td><td>2</td></tr></tbody>"
                 b"</table>"
                 b"</body></html>"
-            )
-            return
-        if self.path == "/robots.txt":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(
-                b"User-agent: *\nDisallow: /private/\n"
-                b"Sitemap: https://example.com/sitemap.xml\n"
             )
             return
         if self.path == "/feed":
@@ -188,7 +177,6 @@ def test_tools_are_registered_with_expected_annotations() -> None:
         "stealth_fetch_headers",
         "stealth_extract_metadata",
         "stealth_extract_tables",
-        "stealth_fetch_robots",
         "stealth_fetch_feed",
         "stealth_fetch_bulk",
     }
@@ -201,7 +189,6 @@ def test_tools_are_registered_with_expected_annotations() -> None:
         "stealth_fetch_headers",
         "stealth_extract_metadata",
         "stealth_extract_tables",
-        "stealth_fetch_robots",
         "stealth_fetch_feed",
         "stealth_fetch_bulk",
     ):
@@ -307,20 +294,6 @@ async def test_stealth_extract_tables_impl(http_url: str) -> None:
     assert len(data) == 1
     assert data[0]["headers"] == ["A", "B"]
     assert data[0]["rows"] == [["1", "2"]]
-
-
-@pytest.mark.asyncio
-async def test_stealth_fetch_robots_impl(http_url: str) -> None:
-    async with app_lifespan(mcp) as context:
-        result = await _stealth_fetch_robots_impl(
-            StealthFetchRobotsInput(url=f"{http_url}/page"),
-            context.session,
-        )
-    data = json.loads(result)
-    assert data["url"].endswith("/robots.txt")
-    assert "*" in data["user_agents"]
-    assert "/private/" in data["user_agents"]["*"]["disallow"]
-    assert "https://example.com/sitemap.xml" in data["sitemaps"]
 
 
 @pytest.mark.asyncio

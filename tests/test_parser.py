@@ -11,7 +11,6 @@ from stealth_fetch_mcp.parser import (
     extract_metadata,
     extract_tables,
     parse_feed,
-    parse_robots_txt,
 )
 
 
@@ -277,46 +276,3 @@ def test_parse_feed_invalid_xml_raises() -> None:
 def test_parse_feed_unknown_root_raises() -> None:
     with pytest.raises(ValueError, match="Unrecognized feed format"):
         parse_feed("<html><body>not a feed</body></html>")
-
-
-# --- parse_robots_txt ---
-
-_ROBOTS_SAMPLE = """
-User-agent: *
-Disallow: /private/
-Allow: /public/
-Crawl-delay: 2
-
-User-agent: Googlebot
-Disallow: /nogoogle/
-
-Sitemap: https://example.com/sitemap.xml
-Sitemap: https://example.com/sitemap2.xml
-"""
-
-
-def test_parse_robots_txt_basic() -> None:
-    data = parse_robots_txt(_ROBOTS_SAMPLE)
-
-    assert "*" in data["user_agents"]
-    assert "/private/" in data["user_agents"]["*"]["disallow"]
-    assert "/public/" in data["user_agents"]["*"]["allow"]
-    assert data["user_agents"]["*"]["crawl_delay"] == 2.0
-    assert "Googlebot" in data["user_agents"]
-    assert "/nogoogle/" in data["user_agents"]["Googlebot"]["disallow"]
-    assert data["sitemaps"] == [
-        "https://example.com/sitemap.xml",
-        "https://example.com/sitemap2.xml",
-    ]
-
-
-def test_parse_robots_txt_comments_ignored() -> None:
-    robots = "# full comment\nUser-agent: * # inline comment\nDisallow: /x/\n"
-    data = parse_robots_txt(robots)
-    assert "*" in data["user_agents"]
-    assert "/x/" in data["user_agents"]["*"]["disallow"]
-
-
-def test_parse_robots_txt_empty() -> None:
-    data = parse_robots_txt("")
-    assert data == {"user_agents": {}, "sitemaps": []}

@@ -2,7 +2,7 @@
 <!-- Generated: 2026-02-21 | Updated: 2026-02-21 -->
 
 ## What This Server Does
-`stealth-fetch-mcp` is an MCP server that fetches web content using `curl_cffi` browser impersonation to reduce bot-blocking compared to default Python HTTP clients. It exposes ten read-only tools:
+`stealth-fetch-mcp` is an MCP server that fetches web content using `curl_cffi` browser impersonation to reduce bot-blocking compared to default Python HTTP clients. It exposes nine read-only tools:
 
 - `stealth_fetch_page`: returns raw HTML.
 - `stealth_fetch_text`: returns cleaned, readable text.
@@ -11,7 +11,6 @@
 - `stealth_fetch_headers`: returns `{status_code, final_url, headers}` as JSON.
 - `stealth_extract_metadata`: extracts JSON-LD, Open Graph, Twitter Card, and `<meta>` tags as JSON.
 - `stealth_extract_tables`: extracts HTML tables as `[{headers, rows}]` JSON.
-- `stealth_fetch_robots`: fetches and parses `robots.txt` for any site URL into structured JSON.
 - `stealth_fetch_feed`: fetches and parses RSS 2.0 or Atom feeds into structured JSON.
 - `stealth_fetch_bulk`: fetches 1–50 URLs concurrently with per-URL error isolation.
 
@@ -35,9 +34,10 @@ All tools enforce truncation and return actionable errors.
 | `tests/` | Pytest test suite covering client, parser, and server behavior (see `tests/AGENTS.md`) |
 
 ## Project Structure & Code Map
-- `src/stealth_fetch_mcp/server.py`: MCP tool schemas, argument validation, tool wiring.
+- `src/stealth_fetch_mcp/server.py`: MCP tool schemas, argument validation, tool wiring, `SERVER_INSTRUCTIONS`.
 - `src/stealth_fetch_mcp/client.py`: shared request/session layer, impersonation defaults, error mapping.
 - `src/stealth_fetch_mcp/parser.py`: HTML parsing, readability-style extraction, link normalization.
+- `src/stealth_fetch_mcp/__main__.py`: enables `python -m stealth_fetch_mcp` invocation.
 - `tests/test_client.py`: transport/session behavior and error-path tests.
 - `tests/test_parser.py`: parsing and extraction behavior.
 - `tests/test_server.py`: MCP tool contract tests.
@@ -100,7 +100,8 @@ Use `session_options` for session-level defaults and `request_options` for per-r
 ## Build, Run, and Test Locally
 - `uv sync`: install runtime + dev dependencies.
 - `uv run stealth-fetch-mcp`: run server entrypoint.
-- `uv run python -m stealth_fetch_mcp.server`: equivalent direct module run.
+- `uv run python -m stealth_fetch_mcp`: equivalent direct module run.
+- `uv run python -m stealth_fetch_mcp.server`: also works (legacy).
 - `uv run pytest -q`: run tests.
 - `uv run pytest --cov=stealth_fetch_mcp --cov-report=term-missing`: coverage report.
 - `uv run ruff check .`: lint.

@@ -993,8 +993,9 @@ async def stealth_extract_tables(
 ) -> str:
     """Fetch a page and extract all HTML tables as a JSON list of {headers, rows} objects.
 
-    Automatically detects header rows from <thead> or leading <th> elements. Useful for
-    financial data, comparison tables, sports results, and pricing grids.
+    Automatically detects header rows from <thead> or leading <th> elements. Handles large
+    pages with many tables without needing a simplified URL. Useful for financial data,
+    comparison tables, sports results, and pricing grids.
     """
     return await _stealth_extract_tables_impl(
         params, ctx.request_context.lifespan_context.session
@@ -1008,7 +1009,8 @@ async def stealth_fetch_robots(
 ) -> str:
     """Fetch and parse a site's robots.txt, returning structured Allow/Disallow/Sitemap data.
 
-    Derives the robots.txt URL from the scheme and host of the provided URL. Useful for
+    Derives the robots.txt URL from the scheme and host of the provided URL. Returns fully
+    parsed, structured JSON — no need to fetch robots.txt manually afterwards. Useful for
     planning respectful crawls and discovering sitemap locations.
     """
     return await _stealth_fetch_robots_impl(params, ctx.request_context.lifespan_context.session)
@@ -1021,6 +1023,7 @@ async def stealth_fetch_feed(
 ) -> str:
     """Fetch and parse an RSS 2.0 or Atom feed, returning items as structured JSON.
 
+    Follows redirects automatically — pass any feed URL and redirect resolution is handled.
     Returns feed title, feed link, and a list of items with title, link, published date,
     and summary. Useful for tracking changelogs, blog updates, and news feeds.
     """
